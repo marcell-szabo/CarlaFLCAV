@@ -1,0 +1,25 @@
+{
+    "actors":
+    [
+        {"type": "vehicle.tesla.model3", "sensors_setting": "sensor_config_simple.json", "spawn_point": 20},
+        {"type": "vehicle.tesla.model3", "sensors_setting": "sensor_config_simple.json", "spawn_point": 30},
+        {"type": "vehicle.tesla.model3", "sensors_setting": "sensor_config_simple.json", "spawn_point": 40},
+        {"type": "vehicle.tesla.model3", "sensors_setting": "sensor_config_simple.json", "spawn_point": 50},
+        {"type": "vehicle.tesla.model3", "sensors_setting": "sensor_config_simple.json", "spawn_point": 60},
+        {"type": "vehicle.tesla.model3", "sensors_setting": "sensor_config_simple.json", "spawn_point": 70},
+        {"type": "vehicle.tesla.model3", "sensors_setting": "sensor_config_simple.json", "spawn_point": 80},
+        {"type": "vehicle.tesla.model3", "sensors_setting": "sensor_config_simple.json", "spawn_point": 90},
+        {"type": "vehicle.tesla.model3", "sensors_setting": "sensor_config_simple.json", "spawn_point": 10},
+        {
+            "type": "infrastructure",
+            "name": "infra_t_junction",
+            "sensors_setting": "sensor_config_infrastructure_template.json",
+            "spawn_point": {"x": 41, "y": -240, "z": 2.7}
+        }
+    ],
+    "other_vehicles":
+    {
+        "vehicle_num": 20,
+        "spawn_points": [4,5,15,68,55,11,95,84,22,47,6,16,69,56,12,13,96,85,23,48]
+    }
+}

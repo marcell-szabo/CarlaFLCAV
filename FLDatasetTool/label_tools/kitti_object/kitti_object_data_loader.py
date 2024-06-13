@@ -23,14 +23,14 @@ def load_lidar_data(path: str):
                                Rotation(yaw=float(row['yaw']),
                                         roll=float(row['roll']),
                                         pitch=float(row['pitch'])))
-        lidar_rawdata_df = lidar_rawdata_df.append({'frame': frame,
-                                                    'lidar_rawdata_path': lidar_rawdata_path,
-                                                    'lidar_pose': lidar_pose},
+        lidar_rawdata_df = pd.concat([lidar_rawdata_df, pd.DataFrame({'frame': [frame],
+                                                    'lidar_rawdata_path': [lidar_rawdata_path],
+                                                    'lidar_pose': [lidar_pose]})],
                                                    ignore_index=True)
     return lidar_rawdata_df
 
 
-def load_camera_data(path: str):
+def load_camera_data(path: str, suffix: str = ''):
     camera_rawdata_list = sorted(glob.glob(f"{path}/*.png"))
     camera_poses = pd.read_csv(f"{path}/poses.csv")
 
@@ -39,7 +39,10 @@ def load_camera_data(path: str):
                               [0.0, camera_info["fy"], camera_info["cy"]],
                               [0.0, 0.0, 1.0]])
 
-    camera_rawdata_df = pd.DataFrame(columns=['frame', 'camera_rawdata_path', 'camera_pose', 'camera_matrix'])
+    if suffix != '':
+        suffix = f'_{suffix}'
+
+    camera_rawdata_df = pd.DataFrame(columns=[f'frame', f'camera_rawdata_path{suffix}', f'camera_pose{suffix}', f'camera_matrix{suffix}'])
     for camera_rawdata_path in camera_rawdata_list:
         frame = get_frame_from_fullpath(camera_rawdata_path)
         row = camera_poses[camera_poses['frame'] == frame]
@@ -47,10 +50,10 @@ def load_camera_data(path: str):
                                 Rotation(yaw=float(row['yaw']),
                                          roll=float(row['roll']),
                                          pitch=float(row['pitch'])))
-        camera_rawdata_df = camera_rawdata_df.append({'frame': frame,
-                                                      'camera_pose': camera_pose,
-                                                      'camera_matrix': camera_matrix,
-                                                      'camera_rawdata_path': camera_rawdata_path},
+        camera_rawdata_df = pd.concat([camera_rawdata_df, pd.DataFrame({f'frame': [frame],
+                                                      f'camera_pose{suffix}': [camera_pose],
+                                                      f'camera_matrix{suffix}': [camera_matrix],
+                                                      f'camera_rawdata_path{suffix}': [camera_rawdata_path]})],
                                                      ignore_index=True)
     return camera_rawdata_df
 
@@ -64,8 +67,8 @@ def load_object_labels(path: str):
     object_labels_df = pd.DataFrame(columns=['frame', 'object_labels_path'])
     for objects_labels_rawdata_path in object_labels_path_list:
         frame = get_frame_from_fullpath(objects_labels_rawdata_path)
-        object_labels_df = object_labels_df.append({'frame': frame,
-                                                    'object_labels_path': objects_labels_rawdata_path},
+        object_labels_df = pd.concat([object_labels_df, pd.DataFrame({'frame': [frame],
+                                                    'object_labels_path': [objects_labels_rawdata_path]})],
                                                    ignore_index=True)
     return object_labels_df
 

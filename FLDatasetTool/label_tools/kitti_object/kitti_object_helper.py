@@ -112,8 +112,8 @@ def write_pointcloud(output_dir: str, frame_id: str, lidar_data: np.array):
     lidar_data.tofile(file_path)
 
 
-def write_image(output_dir: str, frame_id: str, image: np.array):
-    image_dir = f"{output_dir}/image_2"
+def write_image(output_dir: str, frame_id: str, image: np.array, image_dir_idx: str = '2'):
+    image_dir = f"{output_dir}/image_{image_dir_idx}"
     os.makedirs(image_dir, exist_ok=True)
     file_path = "{}/{}.png".format(image_dir, frame_id)
     cv2.imwrite(file_path, image)
@@ -151,17 +151,22 @@ def write_calib(output_dir, frame_id, lidar_trans: Transform, cam_trans: Transfo
 
     camera_mat = np.concatenate((camera_mat, np.array([[0.0], [0.0], [0.0]])), axis=1)
     camera_mat = camera_mat.reshape(1, 12)
-    camera_mat_str = ""
-    for x in camera_mat[0]:
-        camera_mat_str += str(x)
-        camera_mat_str += ' '
-    camera_mat_str += '\n'
+    p0, p1, p2, p3 = (np.copy(camera_mat) for _ in range(4))
+    
+    # p2[0][3] = -p2[0][0] * -0.06
+    # p3[0][3] = -p3[0][0] * 0.48
+
+    camera_mat_str = ['' for _ in range(4)]
+    for i, p_matrix in enumerate((p0, p1, p2, p3)):
+        for x in p_matrix[0]:
+            camera_mat_str[i] += str(x)
+            camera_mat_str[i] += ' '
 
     calib_str = list()
-    calib_str.append(f"P0: {camera_mat_str}")
-    calib_str.append(f"P1: {camera_mat_str}")
-    calib_str.append(f"P2: {camera_mat_str}")
-    calib_str.append(f"P3: {camera_mat_str}")
+    calib_str.append(f"P0: {camera_mat_str[0]}\n")
+    calib_str.append(f"P1: {camera_mat_str[1]}\n")
+    calib_str.append(f"P2: {camera_mat_str[2]}\n")
+    calib_str.append(f"P3: {camera_mat_str[3]}\n")
 
     calib_str.append("R0_rect: 1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.0 \n")
 

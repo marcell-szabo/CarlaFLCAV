@@ -33,11 +33,13 @@ class CameraBase(Sensor):
                                                    4),
                                             dtype=np.uint8,
                                             buffer=sensor_data.raw_data)
+        
+        carla_image_data_array_bgr = cv.cvtColor(carla_image_data_array, cv.COLOR_BGRA2BGR)
 
         # Save image to [RAW_DATA_PATH]/.../[ID]_[SENSOR_TYPE]/[FRAME_ID].png
         success = cv.imwrite("{}/{:0>10d}.png".format(save_dir,
                                                       sensor_data.frame),
-                             carla_image_data_array)
+                             carla_image_data_array_bgr)
 
         if success and self.is_first_frame():
             self.save_camera_info(save_dir)

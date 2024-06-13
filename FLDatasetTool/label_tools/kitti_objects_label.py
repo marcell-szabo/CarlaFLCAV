@@ -15,7 +15,7 @@ from label_tools.kitti_object.kitti_object_data_loader import *
 from label_tools.kitti_object.kitti_object_helper import *
 
 
-def gather_rawdata_to_dataframe(record_name: str, vehicle_name: str, lidar_path: str, camera_path: str):
+def gather_rawdata_to_dataframe(record_name: str, vehicle_name: str, lidar_path: str, camera_path: str, stereo: str):
     rawdata_frames_df = pd.DataFrame()
     # vehicle_poses_df = load_vehicle_pose("{}/{}/{}".format(RAW_DATA_PATH, record_name, vehicle_name))
     # rawdata_frames_df = vehicle_poses_df
@@ -27,9 +27,15 @@ def gather_rawdata_to_dataframe(record_name: str, vehicle_name: str, lidar_path:
     lidar_rawdata_df = load_lidar_data(f"{RAW_DATA_PATH}/{record_name}/{vehicle_name}/{lidar_path}")
     rawdata_frames_df = pd.merge(rawdata_frames_df, lidar_rawdata_df, how='outer', on='frame')
 
-    camera_rawdata_path_df = load_camera_data(f"{RAW_DATA_PATH}/{record_name}/{vehicle_name}/{camera_path}")
-    rawdata_frames_df = pd.merge(rawdata_frames_df, camera_rawdata_path_df, how='outer', on='frame')
-
+    if stereo:
+        camera_path = camera_path.split('_')[0]
+        camera_rawdata_path_df_l = load_camera_data(f"{RAW_DATA_PATH}/{record_name}/{vehicle_name}/{camera_path}_2", 'l')
+        camera_rawdata_path_df_r = load_camera_data(f"{RAW_DATA_PATH}/{record_name}/{vehicle_name}/{camera_path}_3", 'r')
+        rawdata_frames_df = pd.merge(rawdata_frames_df, camera_rawdata_path_df_l, how='outer', on='frame')
+        rawdata_frames_df = pd.merge(rawdata_frames_df, camera_rawdata_path_df_r, how='outer', on='frame')
+    else:
+        camera_rawdata_path_df = load_camera_data(f"{RAW_DATA_PATH}/{record_name}/{vehicle_name}/{camera_path}")
+        rawdata_frames_df = pd.merge(rawdata_frames_df, camera_rawdata_path_df, how='outer', on='frame')
     return rawdata_frames_df
 
 
@@ -48,14 +54,15 @@ def generate_image_sets(path_to_kitti_object: str):
 
 
 class KittiObjectLabelTool:
-    def __init__(self, record_name, vehicle_name, rawdata_df: pd.DataFrame, output_dir=None):
+    def __init__(self, record_name, vehicle_name, rawdata_df: pd.DataFrame, output_dir=None, stereo: bool = False):
         self.record_name = record_name
         self.vehicle_name = vehicle_name
-        self.rawdata_df = rawdata_df
+        self.rawdata_df = rawdata_df.dropna()
         self.range_max = 150.0
         self.range_min = 1.0
         self.points_min = 10
         self.output_dir = output_dir
+        self.stereo = stereo
 
     def process(self):
         debug = False
@@ -84,13 +91,22 @@ class KittiObjectLabelTool:
             print("Cost: {:0<3f}s".format(time.time()-start))
 
     def process_frame(self, index, frame):
+        
         index = "{:0>6d}".format(index)
-        frame_id = "{:0>6d}".format(frame['frame'])
         lidar_trans: Transform = frame['lidar_pose']
-        cam_trans: Transform = frame['camera_pose']
-        cam_mat = np.asarray(frame['camera_matrix'])
-
-        image = read_image(frame['camera_rawdata_path'])
+        if self.stereo:
+            frame_id = "{:0>6d}".format(frame['frame'])
+            cam_trans: Transform = frame['camera_pose_l']          
+            cam_mat = np.asarray(frame['camera_matrix_l'])
+            image = read_image(frame['camera_rawdata_path_l'])
+            cam_trans_r: Transform = frame['camera_pose_r']          
+            cam_mat_r = np.asarray(frame['camera_matrix_r'])
+            image_r = read_image(frame['camera_rawdata_path_r'])
+        else:
+            frame_id = "{:0>6d}".format(frame['frame'])
+            cam_trans: Transform = frame['camera_pose']          
+            cam_mat = np.asarray(frame['camera_matrix'])
+            image = read_image(frame['camera_rawdata_path'])
 
         pointcloud_raw = read_pointcloud(frame['lidar_rawdata_path'])
         o3d_pcd = o3d.geometry.PointCloud()
@@ -196,6 +212,8 @@ class KittiObjectLabelTool:
         write_calib(output_dir, index, lidar_trans, cam_trans, cam_mat)
         write_label(output_dir, index, kitti_labels)
         write_image(output_dir, index, image)
+        if self.stereo:
+            write_image(output_dir, index, image_r, '3')
         write_pointcloud(output_dir, index, pointcloud_raw)
 
 
@@ -222,6 +240,11 @@ def main():
         help='Camera name. e.g. sensor.camera.rgb_2'
     )
     argparser.add_argument(
+        '--stereo', 
+        action='store_true',
+        help='Stereo camera is provided'
+    )
+    argparser.add_argument(
         '--output_dir', '-o',
         default='',
         help='Output dir in dataset folder'
@@ -237,11 +260,12 @@ def main():
 
     for vehicle_name in vehicle_name_list:
         rawdata_df = gather_rawdata_to_dataframe(args.record,
-                                                 vehicle_name,
-                                                 args.lidar,
-                                                 args.camera)
+                                                vehicle_name,
+                                                args.lidar,
+                                                args.camera,
+                                                args.stereo)
         print("Process {} - {}".format(record_name, vehicle_name))
-        kitti_obj_label_tool = KittiObjectLabelTool(record_name, vehicle_name, rawdata_df, args.output_dir)
+        kitti_obj_label_tool = KittiObjectLabelTool(record_name, vehicle_name, rawdata_df, args.output_dir, args.stereo)
         kitti_obj_label_tool.process()
 
 
