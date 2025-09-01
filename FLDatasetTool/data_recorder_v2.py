@@ -23,7 +23,7 @@ async def send_camera_data(data):
     print("data sent")
 
 
-sensor_tick = '0.2'
+sensor_tick = '0.3'
 
 # Connect to the CARLA server
 client = carla.Client('localhost', 2000)
@@ -40,8 +40,17 @@ settings = world.get_settings()
 print(settings)
 blueprint_library = world.get_blueprint_library()
 
+transform = world.get_map().get_spawn_points()[0]
+spectator = world.get_spectator()
+spec_transform = carla.Transform(
+    location = carla.Location(x = transform.location.x, y = transform.location.y, z = transform.location.z),
+    rotation = transform.rotation
+)
+spectator.set_transform(spec_transform)
+
 # Spawn the ego vehicle (Tesla Model 3)
 vehicle_bp = blueprint_library.filter('vehicle.tesla.model3*')[0]
+vehicle_bp.set_attribute('role_name', 'hero')
 spawn_point = world.get_map().get_spawn_points()[0]
 vehicle = world.spawn_actor(vehicle_bp, spawn_point)
 
@@ -100,19 +109,26 @@ def process_image(image, name):
     _, img_encoded = cv2.imencode('.png', image_np)
     img_bytes = img_encoded.tobytes()
 
-    with open("./calibration","rb") as f:
-      with open(f"./{name}.png", "rb") as im:
+    with open("./calibration","r") as f:
+      calibration = f.read()
+      calibration = calibration.split("\n")
+      print(calibration)
+      P0 = calibration[0].split(" ")
+      P1 = calibration[1].split(" ")
+      P2 = calibration[2].strip().split(" ")
+      P3 = calibration[3].split(" ")
+      P2 = [i for i in P2[1:]]
 
       # Schedule sending image data to the Socket.IO server
-        asyncio.run(send_camera_data((im.read(), name ,image.frame, f.read())))
+      asyncio.run(send_camera_data((img_bytes, name ,image.frame, open("./calibration","rb").read(), image.width, image.height, 0.5, ",".join(P2))))
       # res = asyncio.run(send_camera_data(("asd", image.frame)), debug=True)
 
 async def main():
-    await sio.connect('http://10.1.65.52:30005', transports=['websocket'])
+    await sio.connect('http://10.1.65.231:30005', transports=['websocket'])
     print(sio.transport())
     # Set the callback for camera sensor
-    camera_1.listen(lambda image: process_image(image, "image_2"))
-    camera_2.listen(lambda image: process_image(image, "image_3"))
+    camera_1.listen(lambda image: process_image(image, "image_lss"))
+    # camera_2.listen(lambda image: process_image(image, "image_3"))
     while True:
       await asyncio.sleep(0.05)
     

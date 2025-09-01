@@ -6,8 +6,9 @@ import sys
 import torch
 import copy
 import time
+import fedavg.fools_gold as fools_gold
 from fedavg.averaging import average_weights,average_weights_person
-from fedavg.model_compute import model_add, model_sub
+from fedavg.model_compute import model_add, model_sub, numpy_to_state_dict, locals_to_numpy
 import numpy as np
 import math
 from copy import deepcopy
@@ -19,15 +20,20 @@ from resource_allocation import resource_allocator
 class FLCAV_YOLO:
     def __init__(self, args):
         self.pretrained_data_path = 'pretrain'
-        self.federated_data_path = ['town05', 'town03']
+        self.federated_data_path = ['town02']
         self.num_sample = 100
         self.CLOUD_ITER_TOTAL = 1
         self.EDGE_ITER_TOTAL = 1
         self.wireless_budget = args.wireless_budget
         self.wireline_budget = args.wireline_budget
+<<<<<<< Updated upstream
         self.pretrain_model = args.pretrain_model
         self.batch_size = args.batch_size
         self.epochs = args.epochs
+=======
+        self.subscription_fee = args.subscription_fee
+        self.reward = args.block_reward
+>>>>>>> Stashed changes
 
 
     def pretrain(self, num_sample):
@@ -164,28 +170,23 @@ class FLCAV_YOLO:
         print('vehicle numbers:',len(vehicle_list))
         print(vehicle_list)
 
+        
         if ITER == 0:
-            for v in vehicle_list:
-                dataset = 'raw_data/' + data_path + '/' + v + '/yolo_coco_carla.yaml'
-                savefolder = 'fedmodels/' + data_path + '/' + v
-                pretrain_model = 'fedmodels/' + data_path + '/weights/pretrain.pt'
-                sp.run(['bash', '-c', 'python3 yolov5/train_local.py --img 640 --batch 8 --epochs 2 --data ' + dataset \
-                + ' --cfg yolov5/models/yolov5s.yaml --weights ' + pretrain_model + ' --save ' + savefolder \
-                + ' --spsz '+str(1000)])
-
-        if ITER > 0:
-            for v in vehicle_list:
-                dataset = 'raw_data/' + data_path + '/' + v + '/yolo_coco_carla.yaml'
-                savefolder = 'fedmodels/' + data_path + '/' + v
-                last_model = 'fedmodels/' + data_path + '/weights/global.pt'
-                sp.run(['bash', '-c', 'python3 yolov5/train_local.py --img 640 --batch 8 --epochs 2 --data ' \
-                + dataset + ' --cfg yolov5/models/yolov5s.yaml --weights ' + last_model + ' --save ' + savefolder \
-                + ' --spsz '+str(1000)
-                ])
+            last_model = 'fedmodels/' + data_path + '/weights/pretrain.pt'
+        elif ITER > 0:
+            last_model = 'fedmodels/' + data_path + '/weights/global.pt'
+        
+        for v in vehicle_list:
+            dataset = 'raw_data/' + data_path + '/' + v + '/yolov5_carla.yaml'
+            savefolder = 'fedmodels/' + data_path + '/' + v
+            sp.run(['bash', '-c', 'python3 yolov5/train_local.py --img 640 --batch 8 --epochs 2 --data ' + dataset \
+                        + ' --cfg yolov5/models/yolov5s.yaml --weights ' + last_model + ' --save ' + savefolder \
+                        + ' --spsz '+str(1000)])
 
         # save model to dictionary
         sys.path.append('yolov5')
         w_locals = []
+        params_locals = []
         for v in vehicle_list:
             model_update = './fedmodels/' + data_path + '/' + v + '/weights/best.pt'
             model_dict = torch.load(model_update)
@@ -193,19 +194,56 @@ class FLCAV_YOLO:
 
             if ITER == 0:
                 model_last = './fedmodels/' + data_path + '/weights/pretrain.pt'
-                model_dict_last = torch.load(model_last)
-                params_last = model_dict_last['model'].state_dict()
-
-            if ITER >= 1:
+            elif ITER >= 1:
                 model_last = './fedmodels/' + data_path + '/weights/global.pt'
-                model_dict_last = torch.load(model_last)
-                params_last = model_dict_last['model'].state_dict()
+            
+            model_dict_last = torch.load(model_last)
+            params_last = model_dict_last['model'].state_dict()
 
+            params_locals.append(params)
             w_locals.append(model_sub(params, params_last))
-            del(params)
+            current_state_dict = copy.deepcopy(w_locals[-1])
+            
+            #upload local weights to blockchain
+            import tempfile
+            import json
+            import hashlib
 
-        params_avg = average_weights(w_locals)
-        global_params = model_add(params_avg, params_last)
+            tmp = ''
+            with tempfile.NamedTemporaryFile(mode='wb', prefix='weight', delete=False) as fp:
+                for key, tensor in current_state_dict.items():
+                    current_state_dict[key] = tensor.tolist()
+                json_data = json.dumps('weights', ensure_ascii=False)[:10].encode()
+                fp.write(json_data)
+                tmp = fp.name
+                hash = hashlib.md5(json_data).hexdigest()
+                print(f'cd $HOME/fabric-samples/CARLA_weight_publish/application-gateway-go/ && ./weightPublish create -owner={str(v)} -state_f={tmp} -hash={hash}')
+                sp.run(['bash', '-c', f'cd $HOME/fabric-samples/CARLA_weight_publish/application-gateway-go/ && ./weightPublish create -owner={str(v)} -state_f={tmp} -hash={hash}'])
+                
+            del(params)
+        
+        #fools_gold.init(len(vehicle_list), , 81)
+        
+
+        w_locals_np, params_locals_np = locals_to_numpy(w_locals), locals_to_numpy(params_locals)
+        fools_gold.init(len(vehicle_list), np.size(params_locals_np, 1), 81)
+        (weights, wv) = fools_gold.foolsgold(w_locals_np, params_locals_np, np.arange(len(params_locals_np)), ITER)
+        param_fools_gold = numpy_to_state_dict(weights, w_locals)
+        #params_avg = average_weights(w_locals)
+        # global_params = model_add(params_avg, params_last)
+
+        # upload reputation scores to blockchain
+        max_idx = np.argmax(wv)
+        for i in range(len(vehicle_list)):
+            if i == max_idx:
+                balance = self.reward - self.subscription_fee
+            else:
+                balance = -self.subscription_fee
+            print(f'cd $HOME/fabric-samples/CARLA_reputation/application-gateway-go/ && ./reputationPublish update -owner={str(vehicle_list[i])} -balance={balance} -reputation={wv[i]}')
+            sp.run(['bash', '-c', f'cd $HOME/fabric-samples/CARLA_reputation/application-gateway-go/ && ./reputationPublish update -owner={str(vehicle_list[i])} -balance={balance} -reputation={wv[i]}'])
+
+        global_params = model_add(param_fools_gold, params_last)
+
         del(params_last)
 
         edgemodel = model_dict['model']
@@ -232,7 +270,19 @@ class FLCAV_YOLO:
 
 
 def main():
-    argparser = argparse.ArgumentParser(description=__doc__)   
+    argparser = argparse.ArgumentParser(description=__doc__)
+    argparser.add_argument(
+        '-s', '--subscription_fee',
+        metavar='S',
+        required=True,
+        type=int,
+        help='Subscription fee in dollars')
+    argparser.add_argument(
+        '-r', '--block_reward',
+        metavar='R',
+        required=True,
+        type=int,
+        help='Block reward in dollars')
     argparser.add_argument(
         '-l', '--wireline_budget',
         metavar='L',
@@ -269,9 +319,10 @@ def main():
 
     flcav_yolo = FLCAV_YOLO(args)
     allocator = resource_allocator.Resource_Allocator()
-    cnn_opt_array, yolo_opt_array, second_opt_array = allocator.allocate(args.wireless_budget, args.wireline_budget)
-    flcav_yolo.pretrain(int(yolo_opt_array[0]))
-    flcav_yolo.federated(int(yolo_opt_array[1]), int(yolo_opt_array[2]))
+    # cnn_opt_array, yolo_opt_array, second_opt_array = allocator.allocate(args.wireless_budget, args.wireline_budget)
+    flcav_yolo.pretrain(int(50))
+    # flcav_yolo.federated(int(yolo_opt_array[1]), int(yolo_opt_array[2]))
+    flcav_yolo.federated(int(1), int(1))
 
 
 if __name__ == "__main__":
